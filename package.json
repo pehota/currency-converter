@@ -6,7 +6,7 @@
   "license": "MIT",
   "private": true,
   "scripts": {
-    "build": "sh ./bin/build.sh src/elm/Main.elm",
+    "build": "sh ./bin/build.sh src/Main.elm",
     "dev": "elm-live src/Main.elm --port 1234 --pushstate --start-page=index.html -- --debug --output=./elm.js",
     "dev-parcel": "parcel serve index.html --no-cache --global App",
     "start": "yarn dev"

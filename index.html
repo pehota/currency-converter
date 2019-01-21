@@ -1,0 +1,31 @@
+<!-- index.html -->
+<html>
+  <head>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, min-scale=1.0"
+    />
+    <link type="text/css" rel="stylesheet" href="./src/styles.less" />
+  </head>
+  <body>
+    <main id="app"><div class="app-loading-spinner"></div></main>
+    <script src="./elm.js"></script>
+    <script>
+      // This could be a logger to Raven for example
+      const errorLogger = error => console.error(`App Error: ${error} `);
+      const node = document.querySelector('#app');
+      try {
+        const app = Elm.Main.init({
+          node,
+          // Flags values could be coming from the backend
+          flags: {
+            apiBaseUrl: '//localhost:8080',
+          },
+        });
+      } catch (e) {
+        errorLogger(e);
+        node.textContent = 'An error occurred while initializing the app';
+      }
+    </script>
+  </body>
+</html>
