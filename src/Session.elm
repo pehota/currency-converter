@@ -1,4 +1,4 @@
-module Session exposing (Session, create)
+module Session exposing (Session, create, getSettings)
 
 import Api
 import Browser.Navigation as Nav
@@ -19,3 +19,8 @@ type alias SessionData =
 create : Nav.Key -> Flags -> Session
 create key { apiBaseUrl } =
     Session { key = key, token = Nothing, apiBaseUrl = apiBaseUrl }
+
+
+getSettings : Session -> Flags
+getSettings (Session data) =
+    { apiBaseUrl = data.apiBaseUrl }

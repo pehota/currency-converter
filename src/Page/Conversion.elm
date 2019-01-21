@@ -29,7 +29,9 @@ type alias Rates =
 
 init : Session -> ( Model, Cmd Msg )
 init session =
-    ( { rates = RemoteData.Loading }, loadRates "http://localhost:8080" )
+    ( { rates = RemoteData.Loading }
+    , Session.getSettings session |> .apiBaseUrl |> loadRates
+    )
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
