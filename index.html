@@ -22,6 +22,7 @@
             apiBaseUrl: '//localhost:8080',
           },
         });
+        app.ports.logError.subscribe(errorLogger);
       } catch (e) {
         errorLogger(e);
         node.textContent = 'An error occurred while initializing the app';

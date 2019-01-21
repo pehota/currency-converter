@@ -5,12 +5,13 @@ import Data.NonemptyList as NonemptyList exposing (NonemptyList)
 import Html exposing (Html, div, text)
 import Http
 import Json.Decode as Decode
+import Ports
 import RemoteData exposing (WebData)
 import Session exposing (Session)
 
 
 type alias Model =
-    { rates : WebData (NonemptyList CurrencyRate)
+    { rates : WebData Rates
     }
 
 
@@ -38,7 +39,28 @@ update msg model =
             ( { model | rates = RemoteData.Success rates }, Cmd.none )
 
         RatesLoaded (Err err) ->
-            ( { model | rates = RemoteData.Failure err }, Cmd.none )
+            ( { model | rates = RemoteData.Failure err }
+            , Ports.logError <| "Could not load conversion rates. Error: " ++ httpErrorToString err
+            )
+
+
+httpErrorToString : Http.Error -> String
+httpErrorToString err =
+    case err of
+        Http.BadUrl msg ->
+            msg
+
+        Http.Timeout ->
+            "Request timed out"
+
+        Http.NetworkError ->
+            "There was a network error"
+
+        Http.BadStatus statusCode ->
+            "Server returnded " ++ String.fromInt statusCode
+
+        Http.BadBody msg ->
+            msg
 
 
 view : Model -> Html Msg
