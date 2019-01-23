@@ -26,32 +26,30 @@ import Url.Parser as Parser exposing ((</>), Parser)
 type Msg
     = NoOp
     | RatesLoaded (Result Http.Error Currencies)
-    | SourceCurrencyChanged String
-    | TargetCurrencyChanged String
-    | SourceValueChanged String
-    | TargetValueChanged String
+    | CurrencyChanged FieldPosition String
+    | ValueChanged FieldPosition String
 
 
 type Model
     = Loading (Maybe UrlParam) (Maybe UrlParam)
     | Error Http.Error
-    | Success (ConversionField Source) (ConversionField Target)
+    | Success ConversionField ConversionField
 
 
 type alias Currencies =
     SelectList CurrencyValue
 
 
-type Source
+type FieldPosition
     = Source
+    | Target
 
 
-type Target
-    = Target
-
-
-type ConversionField a
-    = ConversionField Currencies CurrencyValueInput
+type alias ConversionField =
+    { currencies : Currencies
+    , value : CurrencyValueInput
+    , position : FieldPosition
+    }
 
 
 type CurrencyValueInput
@@ -80,14 +78,17 @@ initWithParams session source target =
     )
 
 
-initConversionField : Currencies -> ConversionField a
-initConversionField currencies =
-    ConversionField currencies (CurrencyValueInput "1" (Just 1))
+initConversionField : FieldPosition -> Currencies -> ConversionField
+initConversionField position currencies =
+    { currencies = currencies
+    , value = CurrencyValueInput "1" (Just 1)
+    , position = position
+    }
 
 
-initConversionFieldFromParam : Currencies -> UrlParam -> ConversionField a
-initConversionFieldFromParam currencies (UrlParam sign value) =
-    initConversionField currencies
+initConversionFieldFromParam : UrlParam -> FieldPosition -> Currencies -> ConversionField
+initConversionFieldFromParam (UrlParam sign value) position currencies =
+    initConversionField position currencies
         |> updateFieldCurrency sign
         |> updateFieldValue (String.fromFloat value)
 
@@ -100,14 +101,20 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case ( msg, model ) of
         ( RatesLoaded (Ok rates), Loading Nothing Nothing ) ->
-            ( Success (initConversionField rates) (initConversionField rates)
+            ( Success (initConversionField Source rates) (initConversionField Target rates)
             , Cmd.none
             )
 
         ( RatesLoaded (Ok rates), Loading (Just source) (Just target) ) ->
-            ( Success
-                (initConversionFieldFromParam rates source)
-                (initConversionFieldFromParam rates target)
+            let
+                sourceField =
+                    initConversionFieldFromParam source Source rates
+
+                targetField =
+                    convert sourceField
+                        (initConversionFieldFromParam target Target rates)
+            in
+            ( Success sourceField targetField
             , Cmd.none
             )
 
@@ -116,23 +123,39 @@ update msg model =
             , Ports.logError <| "Could not load conversion rates. Error: " ++ httpErrorToString err
             )
 
-        ( SourceCurrencyChanged currencySign, Success sourceField targetField ) ->
-            ( Success (updateFieldCurrency currencySign sourceField) targetField
+        ( CurrencyChanged Source currencySign, Success sourceField targetField ) ->
+            let
+                updatedSource =
+                    updateFieldCurrency currencySign sourceField
+            in
+            ( Success updatedSource (convert updatedSource targetField)
             , Cmd.none
             )
 
-        ( TargetCurrencyChanged currencySign, Success sourceField targetField ) ->
-            ( Success sourceField (updateFieldCurrency currencySign targetField)
+        ( CurrencyChanged Target currencySign, Success sourceField targetField ) ->
+            let
+                updatedTarget =
+                    updateFieldCurrency currencySign targetField
+            in
+            ( Success (convert updatedTarget sourceField) updatedTarget
             , Cmd.none
             )
 
-        ( SourceValueChanged value, Success sourceField targetField ) ->
-            ( Success (updateFieldValue value sourceField) targetField
+        ( ValueChanged Source value, Success sourceField targetField ) ->
+            let
+                updatedSource =
+                    updateFieldValue value sourceField
+            in
+            ( Success updatedSource (convert updatedSource targetField)
             , Cmd.none
             )
 
-        ( TargetValueChanged value, Success sourceField targetField ) ->
-            ( Success sourceField (updateFieldValue value targetField)
+        ( ValueChanged Target value, Success sourceField targetField ) ->
+            let
+                updatedTarget =
+                    updateFieldValue value targetField
+            in
+            ( Success (convert updatedTarget sourceField) updatedTarget
             , Cmd.none
             )
 
@@ -140,9 +163,31 @@ update msg model =
             ( model, Cmd.none )
 
 
-updateFieldCurrency : String -> ConversionField a -> ConversionField a
-updateFieldCurrency sign (ConversionField currencies value) =
-    ConversionField (SelectList.select (.sign >> (==) sign) currencies) value
+toEuro : Float -> Float
+toEuro currencyRate =
+    1 / currencyRate
+
+
+convert : ConversionField -> ConversionField -> ConversionField
+convert source target =
+    let
+        -- Since the backend only returns a list of currencies and the co-responding currency/euro rates
+        -- we first need to convert both currencies to the same base in euro
+        ratio =
+            (toEuro <| getFieldCurrencyRate source)
+                / (toEuro <| getFieldCurrencyRate target)
+    in
+    case getFieldInputValue source of
+        Just sourceAmount ->
+            updateFieldValue (String.fromFloat (sourceAmount * ratio)) target
+
+        _ ->
+            target
+
+
+updateFieldCurrency : String -> ConversionField -> ConversionField
+updateFieldCurrency sign ({ currencies } as field) =
+    { field | currencies = SelectList.select (.sign >> (==) sign) currencies }
 
 
 clipNumericalString : String -> String
@@ -155,14 +200,27 @@ clipNumericalString numerical =
             numerical
 
 
-updateFieldValue : String -> ConversionField a -> ConversionField a
-updateFieldValue userInput (ConversionField currencies value) =
+updateFieldValue : String -> ConversionField -> ConversionField
+updateFieldValue userInput field =
     let
         clipped =
             clipNumericalString userInput
     in
-    ConversionField currencies <|
-        CurrencyValueInput clipped (String.toFloat clipped)
+    { field | value = CurrencyValueInput clipped (String.toFloat clipped) }
+
+
+getFieldCurrencyRate : ConversionField -> Float
+getFieldCurrencyRate =
+    .currencies >> SelectList.selected >> .rate
+
+
+getFieldInputValue : ConversionField -> Maybe Float
+getFieldInputValue { value } =
+    let
+        (CurrencyValueInput _ val) =
+            value
+    in
+    val
 
 
 
@@ -182,7 +240,7 @@ view model =
             renderForm sourceField targetField
 
 
-renderForm : ConversionField Source -> ConversionField Target -> Html Msg
+renderForm : ConversionField -> ConversionField -> Html Msg
 renderForm sourceField targetField =
     div []
         [ renderSourceConversionField sourceField
@@ -190,21 +248,21 @@ renderForm sourceField targetField =
         ]
 
 
-renderSourceConversionField : ConversionField Source -> Html Msg
+renderSourceConversionField : ConversionField -> Html Msg
 renderSourceConversionField =
-    renderConversionField SourceCurrencyChanged SourceValueChanged
+    renderConversionField (CurrencyChanged Source) (ValueChanged Source)
 
 
-renderTargetConversionField : ConversionField Target -> Html Msg
+renderTargetConversionField : ConversionField -> Html Msg
 renderTargetConversionField =
-    renderConversionField TargetCurrencyChanged TargetValueChanged
+    renderConversionField (CurrencyChanged Target) (ValueChanged Target)
 
 
-renderConversionField : (String -> Msg) -> (String -> Msg) -> ConversionField a -> Html Msg
-renderConversionField toCurrencyChangedMsg toValueChangedMsg (ConversionField currencies value) =
+renderConversionField : (String -> Msg) -> (String -> Msg) -> ConversionField -> Html Msg
+renderConversionField toCurrencyChangedMsg toValueChangedMsg { currencies, value, position } =
     div []
-        [ renderCurrencySelector toCurrencyChangedMsg currencies
-        , renderCurrencyValueInput toValueChangedMsg value
+        [ renderCurrencySelector (CurrencyChanged position) currencies
+        , renderCurrencyValueInput (ValueChanged position) value
         ]
 
 
@@ -278,7 +336,8 @@ decoder : Decode.Decoder Currencies
 decoder =
     Decode.field "rates" (Decode.list rateDecoder)
         |> Decode.andThen
-            (SelectList.fromList
+            (List.sortBy .sign
+                >> SelectList.fromList
                 >> Maybe.map Decode.succeed
                 >> Maybe.withDefault (Decode.fail "Empty rates list")
             )
