@@ -1,4 +1,15 @@
-module Conversion exposing (Model, Msg(..), decoder, init, update, view)
+module Conversion exposing
+    ( Model
+    , Msg(..)
+    , UrlParam
+    , decoder
+    , init
+    , initWithParams
+    , parser
+    , update
+    , urlParamToString
+    , view
+    )
 
 import Api
 import Data.SelectList as SelectList exposing (SelectList)
@@ -9,6 +20,7 @@ import Http
 import Json.Decode as Decode
 import Ports
 import Session exposing (Session)
+import Url.Parser as Parser exposing ((</>), Parser)
 
 
 type Msg
@@ -21,7 +33,7 @@ type Msg
 
 
 type Model
-    = Loading
+    = Loading (Maybe UrlParam) (Maybe UrlParam)
     | Error Http.Error
     | Success (ConversionField Source) (ConversionField Target)
 
@@ -50,11 +62,34 @@ type alias CurrencyValue =
     { sign : String, rate : Float }
 
 
+type UrlParam
+    = UrlParam String Float
+
+
 init : Session -> ( Model, Cmd Msg )
 init session =
-    ( Loading
+    ( Loading Nothing Nothing
     , Session.getSettings session |> .apiBaseUrl |> loadRates
     )
+
+
+initWithParams : Session -> UrlParam -> UrlParam -> ( Model, Cmd Msg )
+initWithParams session source target =
+    ( Loading (Just source) (Just target)
+    , Session.getSettings session |> .apiBaseUrl |> loadRates
+    )
+
+
+initConversionField : Currencies -> ConversionField a
+initConversionField currencies =
+    ConversionField currencies (CurrencyValueInput "1" (Just 1))
+
+
+initConversionFieldFromParam : Currencies -> UrlParam -> ConversionField a
+initConversionFieldFromParam currencies (UrlParam sign value) =
+    initConversionField currencies
+        |> updateFieldCurrency sign
+        |> updateFieldValue (String.fromFloat value)
 
 
 
@@ -64,8 +99,15 @@ init session =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case ( msg, model ) of
-        ( RatesLoaded (Ok rates), _ ) ->
+        ( RatesLoaded (Ok rates), Loading Nothing Nothing ) ->
             ( Success (initConversionField rates) (initConversionField rates)
+            , Cmd.none
+            )
+
+        ( RatesLoaded (Ok rates), Loading (Just source) (Just target) ) ->
+            ( Success
+                (initConversionFieldFromParam rates source)
+                (initConversionFieldFromParam rates target)
             , Cmd.none
             )
 
@@ -123,11 +165,6 @@ updateFieldValue userInput (ConversionField currencies value) =
         CurrencyValueInput clipped (String.toFloat clipped)
 
 
-initConversionField : Currencies -> ConversionField a
-initConversionField currencies =
-    ConversionField currencies (CurrencyValueInput "1" (Just 1))
-
-
 
 -- View
 
@@ -138,7 +175,7 @@ view model =
         Error err ->
             div [] [ text <| "Could not load conversion rates" ++ httpErrorToString err ]
 
-        Loading ->
+        Loading _ _ ->
             div [] [ text "Loading ..." ]
 
         Success sourceField targetField ->
@@ -153,11 +190,6 @@ renderForm sourceField targetField =
         ]
 
 
-getInputValue : CurrencyValueInput -> String
-getInputValue (CurrencyValueInput userInput _) =
-    userInput
-
-
 renderSourceConversionField : ConversionField Source -> Html Msg
 renderSourceConversionField =
     renderConversionField SourceCurrencyChanged SourceValueChanged
@@ -165,7 +197,7 @@ renderSourceConversionField =
 
 renderTargetConversionField : ConversionField Target -> Html Msg
 renderTargetConversionField =
-    renderConversionField TargetCurrencyChanged SourceValueChanged
+    renderConversionField TargetCurrencyChanged TargetValueChanged
 
 
 renderConversionField : (String -> Msg) -> (String -> Msg) -> ConversionField a -> Html Msg
@@ -179,6 +211,11 @@ renderConversionField toCurrencyChangedMsg toValueChangedMsg (ConversionField cu
 getCurrencySign : CurrencyValue -> String
 getCurrencySign { sign } =
     sign
+
+
+getInputValue : CurrencyValueInput -> String
+getInputValue (CurrencyValueInput userInput _) =
+    userInput
 
 
 renderCurrencyValueInput : (String -> Msg) -> CurrencyValueInput -> Html Msg
@@ -252,3 +289,34 @@ rateDecoder =
     Decode.map2 CurrencyValue
         (Decode.field "sign" Decode.string)
         (Decode.field "rate" Decode.float)
+
+
+
+-- Route parser
+
+
+parser : Parser (UrlParam -> UrlParam -> a) a
+parser =
+    paramParser </> paramParser
+
+
+paramParser : Parser (UrlParam -> a) a
+paramParser =
+    Parser.custom "CONVERSION_URL_PARAM" urlParamFromString
+
+
+urlParamFromString : String -> Maybe UrlParam
+urlParamFromString str =
+    case String.split ":" str of
+        [ currencySign, currencyValue ] ->
+            Maybe.map
+                (UrlParam (String.toUpper currencySign))
+                (String.toFloat currencyValue)
+
+        _ ->
+            Nothing
+
+
+urlParamToString : UrlParam -> String
+urlParamToString (UrlParam sign value) =
+    String.join ":" [ sign, String.fromFloat value ]

@@ -60,8 +60,8 @@ setRoute url session =
             Conversion.init session
                 |> updateWith CurrencyConversion CurrencyConversionMsg
 
-        Just (Route.Convert _ _) ->
-            Conversion.init session
+        Just (Route.Convert sourceCurrencyParam targetCurrencyParam) ->
+            Conversion.initWithParams session sourceCurrencyParam targetCurrencyParam
                 |> updateWith CurrencyConversion CurrencyConversionMsg
 
         Nothing ->

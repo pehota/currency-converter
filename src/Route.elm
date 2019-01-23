@@ -1,6 +1,7 @@
 module Route exposing (Route(..), fromUrl, href, replaceUrl)
 
 import Browser.Navigation as Nav
+import Conversion
 import Html exposing (Attribute)
 import Html.Attributes as Attr
 import Url exposing (Url)
@@ -9,14 +10,14 @@ import Url.Parser as Parser exposing ((</>), Parser)
 
 type Route
     = Root
-    | Convert String String
+    | Convert Conversion.UrlParam Conversion.UrlParam
 
 
 parser : Parser (Route -> a) a
 parser =
     Parser.oneOf
         [ Parser.map Root Parser.top
-        , Parser.map Convert (Parser.string </> Parser.string)
+        , Parser.map Convert Conversion.parser
         ]
 
 
@@ -44,7 +45,9 @@ routeToString page =
                 Root ->
                     []
 
-                Convert fromCurrency toCurrency ->
-                    [ fromCurrency, toCurrency ]
+                Convert sourceCurrencyParam targetCurrencyParam ->
+                    List.map
+                        Conversion.urlParamToString
+                        [ sourceCurrencyParam, targetCurrencyParam ]
     in
     "#/" ++ String.join "/" pieces
