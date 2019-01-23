@@ -2,34 +2,51 @@ module Page.Conversion exposing (Model, Msg(..), decoder, init, update, view)
 
 import Api
 import Data.NonemptyList as NonemptyList exposing (NonemptyList)
-import Html exposing (Html, div, text)
+import Html exposing (Html, div, input, option, select, text)
+import Html.Attributes as Attr
 import Http
 import Json.Decode as Decode
 import Ports
-import RemoteData exposing (WebData)
 import Session exposing (Session)
 
 
-type alias Model =
-    { rates : WebData Rates
-    }
-
-
 type Msg
-    = RatesLoaded (Result Http.Error Rates)
+    = RatesLoaded (Result Http.Error Currencies)
 
 
-type CurrencyRate
-    = CurrencyRate String Float
+type Model
+    = Loading
+    | Error Http.Error
+    | Success (ConversionField Source) (ConversionField Target)
 
 
-type alias Rates =
-    NonemptyList CurrencyRate
+type alias Currencies =
+    NonemptyList CurrencyValue
+
+
+type Source
+    = Source
+
+
+type Target
+    = Target
+
+
+type ConversionField a
+    = ConversionField Currencies CurrencyValueInput
+
+
+type CurrencyValueInput
+    = CurrencyValueInput String (Maybe Float)
+
+
+type CurrencyValue
+    = CurrencyValue String Float
 
 
 init : Session -> ( Model, Cmd Msg )
 init session =
-    ( { rates = RemoteData.Loading }
+    ( Loading
     , Session.getSettings session |> .apiBaseUrl |> loadRates
     )
 
@@ -38,12 +55,19 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         RatesLoaded (Ok rates) ->
-            ( { model | rates = RemoteData.Success rates }, Cmd.none )
+            ( Success (initConversionField rates) (initConversionField rates)
+            , Cmd.none
+            )
 
         RatesLoaded (Err err) ->
-            ( { model | rates = RemoteData.Failure err }
+            ( Error err
             , Ports.logError <| "Could not load conversion rates. Error: " ++ httpErrorToString err
             )
+
+
+initConversionField : Currencies -> ConversionField a
+initConversionField currencies =
+    ConversionField currencies (CurrencyValueInput "1" (Just 1))
 
 
 httpErrorToString : Http.Error -> String
@@ -65,25 +89,51 @@ httpErrorToString err =
             msg
 
 
-view : Model -> Html Msg
-view { rates } =
-    case rates of
-        RemoteData.Failure err ->
-            div [] [ text <| "Error: Could not load conversion rates" ]
 
-        RemoteData.Loading ->
+-- View
+
+
+view : Model -> Html Msg
+view model =
+    case model of
+        Error err ->
+            div [] [ text <| "Could not load conversion rates" ++ httpErrorToString err ]
+
+        Loading ->
             div [] [ text "Loading ..." ]
 
-        RemoteData.NotAsked ->
-            text ""
-
-        RemoteData.Success conversionRates ->
-            renderForm conversionRates
+        Success sourceCurrency targetCurrency ->
+            renderForm sourceCurrency targetCurrency
 
 
-renderForm : Rates -> Html Msg
-renderForm rates =
-    div [] [ text "show conversion form" ]
+renderForm : ConversionField Source -> ConversionField Target -> Html Msg
+renderForm sourceCurrency targetCurrency =
+    div []
+        [ renderConversionField sourceCurrency
+        , renderConversionField targetCurrency
+        ]
+
+
+getInputValue : CurrencyValueInput -> String
+getInputValue (CurrencyValueInput userInput _) =
+    userInput
+
+
+renderConversionField : ConversionField a -> Html Msg
+renderConversionField (ConversionField currencies value) =
+    div []
+        [ renderCurrencySelector currencies
+        , input [ Attr.type_ "number", Attr.value <| getInputValue value ] []
+        ]
+
+
+renderCurrencySelector : Currencies -> Html Msg
+renderCurrencySelector currencies =
+    div [] [ text "Currencies selector" ]
+
+
+
+-- Api
 
 
 loadRates : String -> Cmd Msg
@@ -91,7 +141,11 @@ loadRates baseApiUrl =
     Api.getWithAuth (baseApiUrl ++ "/currencies") RatesLoaded decoder
 
 
-decoder : Decode.Decoder Rates
+
+-- Decoders
+
+
+decoder : Decode.Decoder Currencies
 decoder =
     Decode.field "rates" (Decode.list rateDecoder)
         |> Decode.andThen
@@ -101,8 +155,8 @@ decoder =
             )
 
 
-rateDecoder : Decode.Decoder CurrencyRate
+rateDecoder : Decode.Decoder CurrencyValue
 rateDecoder =
-    Decode.map2 CurrencyRate
+    Decode.map2 CurrencyValue
         (Decode.field "sign" Decode.string)
         (Decode.field "rate" Decode.float)
