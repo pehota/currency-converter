@@ -4,6 +4,7 @@ import Api
 import Data.SelectList as SelectList exposing (SelectList)
 import Html exposing (Html, div, input, option, select, text)
 import Html.Attributes as Attr
+import Html.Events exposing (onInput)
 import Http
 import Json.Decode as Decode
 import Ports
@@ -11,7 +12,12 @@ import Session exposing (Session)
 
 
 type Msg
-    = RatesLoaded (Result Http.Error Currencies)
+    = NoOp
+    | RatesLoaded (Result Http.Error Currencies)
+    | SourceCurrencyChanged String
+    | TargetCurrencyChanged String
+    | SourceValueChanged String
+    | TargetValueChanged String
 
 
 type Model
@@ -40,8 +46,8 @@ type CurrencyValueInput
     = CurrencyValueInput String (Maybe Float)
 
 
-type CurrencyValue
-    = CurrencyValue String Float
+type alias CurrencyValue =
+    { sign : String, rate : Float }
 
 
 init : Session -> ( Model, Cmd Msg )
@@ -53,16 +59,30 @@ init session =
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
-    case msg of
-        RatesLoaded (Ok rates) ->
+    case ( msg, model ) of
+        ( RatesLoaded (Ok rates), _ ) ->
             ( Success (initConversionField rates) (initConversionField rates)
             , Cmd.none
             )
 
-        RatesLoaded (Err err) ->
+        ( RatesLoaded (Err err), _ ) ->
             ( Error err
             , Ports.logError <| "Could not load conversion rates. Error: " ++ httpErrorToString err
             )
+
+        ( SourceCurrencyChanged currencySign, Success sourceField targetField ) ->
+            ( Success (updateFieldCurrency currencySign sourceField) targetField, Cmd.none )
+
+        ( TargetCurrencyChanged currencySign, Success sourceField targetField ) ->
+            ( Success sourceField (updateFieldCurrency currencySign targetField), Cmd.none )
+
+        _ ->
+            ( model, Cmd.none )
+
+
+updateFieldCurrency : String -> ConversionField a -> ConversionField a
+updateFieldCurrency sign (ConversionField currencies value) =
+    ConversionField (SelectList.select (.sign >> (==) sign) currencies) value
 
 
 initConversionField : Currencies -> ConversionField a
@@ -102,15 +122,15 @@ view model =
         Loading ->
             div [] [ text "Loading ..." ]
 
-        Success sourceCurrency targetCurrency ->
-            renderForm sourceCurrency targetCurrency
+        Success sourceField targetField ->
+            renderForm sourceField targetField
 
 
 renderForm : ConversionField Source -> ConversionField Target -> Html Msg
-renderForm sourceCurrency targetCurrency =
+renderForm sourceField targetField =
     div []
-        [ renderConversionField sourceCurrency
-        , renderConversionField targetCurrency
+        [ renderSourceConversionField sourceField
+        , renderTargetConversionField targetField
         ]
 
 
@@ -119,17 +139,51 @@ getInputValue (CurrencyValueInput userInput _) =
     userInput
 
 
-renderConversionField : ConversionField a -> Html Msg
-renderConversionField (ConversionField currencies value) =
+renderSourceConversionField : ConversionField Source -> Html Msg
+renderSourceConversionField =
+    renderConversionField SourceCurrencyChanged SourceValueChanged
+
+
+renderTargetConversionField : ConversionField Target -> Html Msg
+renderTargetConversionField =
+    renderConversionField TargetCurrencyChanged SourceValueChanged
+
+
+renderConversionField : (String -> Msg) -> (String -> Msg) -> ConversionField a -> Html Msg
+renderConversionField toCurrencyChangedMsg toValueChangedMsg (ConversionField currencies value) =
     div []
-        [ renderCurrencySelector currencies
-        , input [ Attr.type_ "number", Attr.value <| getInputValue value ] []
+        [ renderCurrencySelector toCurrencyChangedMsg currencies
+        , renderCurrencyValueInput toValueChangedMsg value
         ]
 
 
-renderCurrencySelector : Currencies -> Html Msg
-renderCurrencySelector currencies =
-    div [] [ text "Currencies selector" ]
+getCurrencySign : CurrencyValue -> String
+getCurrencySign { sign } =
+    sign
+
+
+renderCurrencyValueInput : (String -> Msg) -> CurrencyValueInput -> Html Msg
+renderCurrencyValueInput toMsg value =
+    input [ Attr.type_ "number", Attr.value <| getInputValue value ] []
+
+
+renderCurrencySelector : (String -> Msg) -> Currencies -> Html Msg
+renderCurrencySelector toMsg currencies =
+    let
+        selectedCurrency =
+            SelectList.selected currencies
+    in
+    div []
+        [ select [ onInput toMsg ] <|
+            List.map
+                (\currency -> renderOption (getCurrencySign currency) (currency == selectedCurrency))
+                (SelectList.toList currencies)
+        ]
+
+
+renderOption : String -> Bool -> Html Msg
+renderOption value isSelected =
+    option [ Attr.value value, Attr.selected isSelected ] [ text value ]
 
 
 
