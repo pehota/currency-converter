@@ -57,6 +57,10 @@ init session =
     )
 
 
+
+-- Update
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case ( msg, model ) of
@@ -76,6 +80,12 @@ update msg model =
         ( TargetCurrencyChanged currencySign, Success sourceField targetField ) ->
             ( Success sourceField (updateFieldCurrency currencySign targetField), Cmd.none )
 
+        ( SourceValueChanged value, Success sourceField targetField ) ->
+            ( Success (updateFieldValue value sourceField) targetField, Cmd.none )
+
+        ( TargetValueChanged value, Success sourceField targetField ) ->
+            ( Success sourceField (updateFieldValue value targetField), Cmd.none )
+
         _ ->
             ( model, Cmd.none )
 
@@ -85,28 +95,29 @@ updateFieldCurrency sign (ConversionField currencies value) =
     ConversionField (SelectList.select (.sign >> (==) sign) currencies) value
 
 
+clipNumericalString : String -> String
+clipNumericalString numerical =
+    case String.split "." numerical of
+        [ wholeNum, decimals ] ->
+            String.join "." [ wholeNum, String.left 2 decimals ]
+
+        _ ->
+            numerical
+
+
+updateFieldValue : String -> ConversionField a -> ConversionField a
+updateFieldValue userInput (ConversionField currencies value) =
+    let
+        clipped =
+            clipNumericalString userInput
+    in
+    ConversionField currencies <|
+        CurrencyValueInput clipped (String.toFloat clipped)
+
+
 initConversionField : Currencies -> ConversionField a
 initConversionField currencies =
     ConversionField currencies (CurrencyValueInput "1" (Just 1))
-
-
-httpErrorToString : Http.Error -> String
-httpErrorToString err =
-    case err of
-        Http.BadUrl msg ->
-            msg
-
-        Http.Timeout ->
-            "Request timed out"
-
-        Http.NetworkError ->
-            "There was a network error"
-
-        Http.BadStatus statusCode ->
-            "Server returnded " ++ String.fromInt statusCode
-
-        Http.BadBody msg ->
-            msg
 
 
 
@@ -164,7 +175,7 @@ getCurrencySign { sign } =
 
 renderCurrencyValueInput : (String -> Msg) -> CurrencyValueInput -> Html Msg
 renderCurrencyValueInput toMsg value =
-    input [ Attr.type_ "number", Attr.value <| getInputValue value ] []
+    input [ Attr.type_ "number", Attr.value <| getInputValue value, onInput toMsg ] []
 
 
 renderCurrencySelector : (String -> Msg) -> Currencies -> Html Msg
@@ -187,12 +198,31 @@ renderOption value isSelected =
 
 
 
--- Api
+-- Helpers
 
 
 loadRates : String -> Cmd Msg
 loadRates baseApiUrl =
     Api.getWithAuth (baseApiUrl ++ "/currencies") RatesLoaded decoder
+
+
+httpErrorToString : Http.Error -> String
+httpErrorToString err =
+    case err of
+        Http.BadUrl msg ->
+            msg
+
+        Http.Timeout ->
+            "Request timed out"
+
+        Http.NetworkError ->
+            "There was a network error"
+
+        Http.BadStatus statusCode ->
+            "Server returnded " ++ String.fromInt statusCode
+
+        Http.BadBody msg ->
+            msg
 
 
 
