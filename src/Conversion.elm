@@ -1,4 +1,4 @@
-module Page.Conversion exposing (Model, Msg(..), decoder, init, update, view)
+module Conversion exposing (Model, Msg(..), decoder, init, update, view)
 
 import Api
 import Data.SelectList as SelectList exposing (SelectList)
@@ -75,16 +75,24 @@ update msg model =
             )
 
         ( SourceCurrencyChanged currencySign, Success sourceField targetField ) ->
-            ( Success (updateFieldCurrency currencySign sourceField) targetField, Cmd.none )
+            ( Success (updateFieldCurrency currencySign sourceField) targetField
+            , Cmd.none
+            )
 
         ( TargetCurrencyChanged currencySign, Success sourceField targetField ) ->
-            ( Success sourceField (updateFieldCurrency currencySign targetField), Cmd.none )
+            ( Success sourceField (updateFieldCurrency currencySign targetField)
+            , Cmd.none
+            )
 
         ( SourceValueChanged value, Success sourceField targetField ) ->
-            ( Success (updateFieldValue value sourceField) targetField, Cmd.none )
+            ( Success (updateFieldValue value sourceField) targetField
+            , Cmd.none
+            )
 
         ( TargetValueChanged value, Success sourceField targetField ) ->
-            ( Success sourceField (updateFieldValue value targetField), Cmd.none )
+            ( Success sourceField (updateFieldValue value targetField)
+            , Cmd.none
+            )
 
         _ ->
             ( model, Cmd.none )

@@ -3,6 +3,7 @@ module Main exposing (main)
 import Api
 import Browser exposing (Document, UrlRequest)
 import Browser.Navigation as Nav
+import Conversion
 import Flags
 import Html exposing (Html, div, text)
 import Html.Attributes as Attr
@@ -10,7 +11,6 @@ import Html.Events exposing (onInput)
 import Html.Helpers
 import Json.Decode as Decode
 import Json.Encode as Encode
-import Page.Conversion as Conversion
 import Route
 import Session exposing (Session)
 import Url exposing (Url)
