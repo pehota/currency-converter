@@ -1,7 +1,7 @@
 module Page.Conversion exposing (Model, Msg(..), decoder, init, update, view)
 
 import Api
-import Data.NonemptyList as NonemptyList exposing (NonemptyList)
+import Data.SelectList as SelectList exposing (SelectList)
 import Html exposing (Html, div, input, option, select, text)
 import Html.Attributes as Attr
 import Http
@@ -21,7 +21,7 @@ type Model
 
 
 type alias Currencies =
-    NonemptyList CurrencyValue
+    SelectList CurrencyValue
 
 
 type Source
@@ -149,7 +149,7 @@ decoder : Decode.Decoder Currencies
 decoder =
     Decode.field "rates" (Decode.list rateDecoder)
         |> Decode.andThen
-            (NonemptyList.fromList
+            (SelectList.fromList
                 >> Maybe.map Decode.succeed
                 >> Maybe.withDefault (Decode.fail "Empty rates list")
             )
